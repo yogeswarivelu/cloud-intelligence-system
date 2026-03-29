@@ -1,8 +1,8 @@
 import streamlit as st
 import requests
 import pandas as pd
-import matplotlib.pyplot as plt
 import json
+import plotly.express as px
 
 # -----------------------------
 # CONFIG
@@ -13,25 +13,57 @@ GENAI_URL = "https://px6azke1wa.execute-api.ap-south-1.amazonaws.com/prod/genai"
 st.set_page_config(page_title="Cloud Intelligence", layout="wide")
 
 # -----------------------------
-# CUSTOM CSS (UI IMPROVEMENT)
+# PREMIUM CSS
 # -----------------------------
 st.markdown("""
 <style>
-.main-title {
-    font-size:36px;
-    font-weight:bold;
-    text-align:center;
-    margin-bottom:20px;
+body {
+    background-color:#f4f7fb;
 }
-.card {
+.header {
+    background: linear-gradient(90deg, #4facfe, #00f2fe);
     padding:20px;
     border-radius:12px;
-    background-color:#f0f2f6;
     text-align:center;
+    color:white;
+    font-size:40px;
+    font-weight:bold;
 }
-.stButton>button {
-    width:100%;
-    border-radius:8px;
+.subtitle {
+    text-align:center;
+    margin-bottom:20px;
+    color:gray;
+}
+.kpi {
+    padding:20px;
+    border-radius:12px;
+    color:white;
+    text-align:center;
+    font-size:18px;
+}
+.blue {background:#007bff;}
+.red {background:#dc3545;}
+.green {background:#28a745;}
+.user-msg {
+    background:#007bff;
+    color:white;
+    padding:10px;
+    border-radius:10px;
+    margin:5px;
+    text-align:right;
+}
+.ai-msg {
+    background:#e9ecef;
+    padding:10px;
+    border-radius:10px;
+    margin:5px;
+}
+.chat-center {
+    display:flex;
+    justify-content:center;
+}
+.chat-box {
+    width:60%;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -39,24 +71,20 @@ st.markdown("""
 # -----------------------------
 # LOGIN SYSTEM
 # -----------------------------
-USER_CREDENTIALS = {
-    "admin": "1234",
-    "user": "abcd"
-}
+USER_CREDENTIALS = {"admin": "1234"}
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
+if "page" not in st.session_state:
+    st.session_state.page = "Home"
 
 def login():
-    st.title("🔐 Login")
-
+    st.markdown("<h2 style='text-align:center;'>🔐 Login</h2>", unsafe_allow_html=True)
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
-
     if st.button("Login"):
         if username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password:
             st.session_state.logged_in = True
-            st.success("Login successful!")
             st.rerun()
         else:
             st.error("Invalid credentials")
@@ -71,9 +99,8 @@ def logout():
 @st.cache_data
 def load_data():
     try:
-        response = requests.get(API_URL)
-        data = response.json()
-        return pd.DataFrame(data)
+        res = requests.get(API_URL)
+        return pd.DataFrame(res.json())
     except:
         return pd.DataFrame()
 
@@ -81,124 +108,159 @@ def load_data():
 # MAIN APP
 # -----------------------------
 def main_app():
-
     df = load_data()
 
-    st.markdown('<p class="main-title">📊 Cloud Intelligent Business Dashboard</p>', unsafe_allow_html=True)
+    # -----------------------------
+    # SIDEBAR
+    # -----------------------------
+    st.sidebar.markdown("<h2 style='text-align:center;'>☁️ Cloud Intelligence</h2>", unsafe_allow_html=True)
 
-    # Logout button
+    # Navigation
+    st.sidebar.markdown("### 🔹 Navigation")
+    if st.sidebar.button("🏠 Home"):
+        st.session_state.page = "Home"
+    if st.sidebar.button("📊 Dashboard"):
+        st.session_state.page = "Dashboard"
+    if st.sidebar.button("💬 Chatbot"):
+        st.session_state.page = "Chatbot"
+
+    st.sidebar.markdown("---")
+
+    # Filters
+    st.sidebar.markdown("### 🔹 Filters")
+    if not df.empty:
+        delayed_only = st.sidebar.checkbox("Show only delayed orders")
+        min_time, max_time = int(df['total_time'].min()), int(df['total_time'].max())
+        time_range = st.sidebar.slider("Processing time range", min_time, max_time, (min_time, max_time))
+    else:
+        delayed_only = False
+        time_range = (0, 1000)
+
+    st.sidebar.markdown("---")
+
+    # Quick KPIs
+    st.sidebar.markdown("### 🔹 Quick Stats")
+    if not df.empty:
+        st.sidebar.metric("Total Orders", len(df))
+        st.sidebar.metric("Delayed Orders", int(df['delayed'].sum()))
+        st.sidebar.metric("Avg Processing Time", int(df['total_time'].mean()))
+
+    st.sidebar.markdown("---")
+
+    # Logout
     st.sidebar.button("🚪 Logout", on_click=logout)
 
-    # Sidebar filters
-    st.sidebar.title("🔎 Filters")
+    # -----------------------------
+    # HEADER
+    # -----------------------------
+    st.markdown('<div class="header">☁️ Cloud Intelligence System</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subtitle">Smart Business Monitoring & AI Insights</div>', unsafe_allow_html=True)
 
+    # -----------------------------
+    # FILTER DATA
+    # -----------------------------
     if not df.empty:
-        min_time = st.sidebar.slider("Minimum Processing Time", 0, int(df['total_time'].max()), 0)
+        filtered_df = df[
+            (df['total_time'] >= time_range[0]) & 
+            (df['total_time'] <= time_range[1])
+        ]
+        if delayed_only:
+            filtered_df = filtered_df[filtered_df['delayed'] == 1]
     else:
-        min_time = 0
-
-    show_delayed_only = st.sidebar.checkbox("Show Only Delayed Orders")
-
-    filtered_df = df.copy()
-
-    if not df.empty:
-        filtered_df = filtered_df[filtered_df['total_time'] >= min_time]
-
-        if show_delayed_only:
-            filtered_df = filtered_df[filtered_df['delayed'] == True]
-
-    # Tabs
-    tab1, tab2, tab3 = st.tabs(["🏠 Home", "📊 Dashboard", "💬 Chatbot"])
+        filtered_df = pd.DataFrame()
 
     # -----------------------------
-    # HOME
+    # HOME PAGE
     # -----------------------------
-    with tab1:
-        st.subheader("🚀 Smart Business Monitoring")
+    if st.session_state.page == "Home":
+        st.subheader("Welcome 👋")
+        if filtered_df.empty:
+            st.warning("No data available")
+            return
 
-        col1, col2, col3 = st.columns(3)
+        c1, c2, c3 = st.columns(3)
+        total = len(filtered_df)
+        delayed = int(filtered_df['delayed'].sum())
+        avg = int(filtered_df['total_time'].mean())
 
-        col1.markdown('<div class="card">⏱️<br>Detect Delays</div>', unsafe_allow_html=True)
-        col2.markdown('<div class="card">📉<br>Bottlenecks</div>', unsafe_allow_html=True)
-        col3.markdown('<div class="card">🤖<br>AI Insights</div>', unsafe_allow_html=True)
+        c1.metric("📦 Orders", total)
+        c2.metric("⏳ Delays", delayed)
+        c3.metric("⚡ Avg Time", avg)
 
-        st.info("Built using AWS + Process Mining + AI")
+        st.markdown("### ⚡ Quick Insights")
+        if delayed > 0:
+            st.error(f"{delayed} orders are delayed. Immediate attention needed!")
+        else:
+            st.success("All orders are on time.")
+
+        st.markdown("### 📋 Recent Orders")
+        st.dataframe(filtered_df.head(10), use_container_width=True)
+
+        st.markdown("### 📊 Quick View")
+        fig = px.pie(filtered_df, names="delayed", title="Delayed vs On-Time")
+        st.plotly_chart(fig, use_container_width=True)
 
     # -----------------------------
     # DASHBOARD
     # -----------------------------
-    with tab2:
+    elif st.session_state.page == "Dashboard":
+        if filtered_df.empty:
+            st.warning("No data available")
+            return
 
-        st.subheader("📌 Summary")
+        total = len(filtered_df)
+        delayed = int(filtered_df['delayed'].sum())
+        avg = int(filtered_df['total_time'].mean())
 
-        col1, col2, col3 = st.columns(3)
+        c1, c2, c3 = st.columns(3)
+        c1.markdown(f'<div class="kpi blue"><h2>{total}</h2>Total Orders</div>', unsafe_allow_html=True)
+        c2.markdown(f'<div class="kpi red"><h2>{delayed}</h2>Delayed</div>', unsafe_allow_html=True)
+        c3.markdown(f'<div class="kpi green"><h2>{avg}</h2>Avg Time</div>', unsafe_allow_html=True)
 
-        total_orders = len(filtered_df)
-        delayed_orders = int(filtered_df['delayed'].sum()) if not filtered_df.empty else 0
-        avg_time = int(filtered_df['total_time'].mean()) if not filtered_df.empty else 0
+        fig1 = px.bar(filtered_df['delayed'].value_counts(), title="Delay Distribution")
+        st.plotly_chart(fig1, use_container_width=True)
 
-        col1.markdown(f'<div class="card">📦<br><b>{total_orders}</b><br>Total Orders</div>', unsafe_allow_html=True)
-        col2.markdown(f'<div class="card">⏳<br><b>{delayed_orders}</b><br>Delayed</div>', unsafe_allow_html=True)
-        col3.markdown(f'<div class="card">⚡<br><b>{avg_time}</b><br>Avg Time</div>', unsafe_allow_html=True)
+        fig2 = px.histogram(filtered_df, x="total_time", title="Processing Time")
+        st.plotly_chart(fig2, use_container_width=True)
 
-        st.subheader("📊 Analytics")
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            fig, ax = plt.subplots()
-            filtered_df['delayed'].value_counts().plot(kind='bar', ax=ax)
-            ax.set_title("Delay Distribution")
-            st.pyplot(fig)
-
-        with col2:
-            fig2, ax2 = plt.subplots()
-            ax2.hist(filtered_df['total_time'], bins=10)
-            ax2.set_title("Processing Time")
-            st.pyplot(fig2)
-
-        st.subheader("📋 Data")
         st.dataframe(filtered_df, use_container_width=True)
 
     # -----------------------------
     # CHATBOT
     # -----------------------------
-    with tab3:
-
-        st.subheader("💬 Ask AI")
-
+    elif st.session_state.page == "Chatbot":
+        st.subheader("💬 AI Assistant")
         if "chat_history" not in st.session_state:
             st.session_state.chat_history = []
 
-        user_input = st.text_input("Ask something")
-
-        if st.button("Ask") and user_input:
-            try:
+        st.markdown('<div class="chat-center"><div class="chat-box">', unsafe_allow_html=True)
+        user_input = st.text_input("Ask your question...")
+        if st.button("Ask"):
+            if user_input:
                 payload = {
                     "query": user_input,
-                    "data": df.to_dict(orient="records")
+                    "data": filtered_df.to_dict(orient="records")
                 }
-
-                response = requests.post(GENAI_URL, json=payload)
-                result = response.json()
-
-                body = json.loads(result.get("body", "{}"))
-                reply = body.get("response", "No response")
+                try:
+                    res = requests.post(GENAI_URL, json=payload)
+                    result = res.json()
+                    body = json.loads(result.get("body", "{}"))
+                    reply = body.get("response", "No response")
+                except:
+                    reply = "Error connecting to AI."
 
                 st.session_state.chat_history.append(("You", user_input))
                 st.session_state.chat_history.append(("AI", reply))
-
-            except Exception as e:
-                st.error(f"Error: {e}")
+        st.markdown('</div></div>', unsafe_allow_html=True)
 
         for role, msg in st.session_state.chat_history:
             if role == "You":
-                st.markdown(f"🧑 **You:** {msg}")
+                st.markdown(f'<div class="user-msg">{msg}</div>', unsafe_allow_html=True)
             else:
-                st.markdown(f"🤖 **AI:** {msg}")
+                st.markdown(f'<div class="ai-msg">{msg}</div>', unsafe_allow_html=True)
 
 # -----------------------------
-# APP FLOW
+# FLOW
 # -----------------------------
 if not st.session_state.logged_in:
     login()
